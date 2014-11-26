@@ -85,9 +85,7 @@ public class Mortar {
                         responseCode = conn.getResponseCode();
                         in = new BufferedInputStream(conn.getInputStream());
                         out = new FileOutputStream(mTargetFile);
-                        if (mDownloadListener != null) {
-                            mDownloadListener.onStart();
-                        }
+                        postStart();
                         while ((bytesReadOnce = in.read(buffer)) != -1) {
                             out.write(buffer, 0, bytesReadOnce);
                             mDownloadEntry.downloadedLength += bytesReadOnce;
@@ -125,7 +123,7 @@ public class Mortar {
                         // ***** Begin a trick to check if support break-point download
                         if (mDownloadEntry.totalLength * 2 == totalLength) {
                             //Fixme 14-11-20 not rigorous, but how ?
-                            Log.d(Mortar.TAG, "File already downloaded");
+                            Log.d(Mortar.TAG, "File already downloaded 1");
                             return null;
                         } else if (mDownloadEntry.totalLength < totalLength && responseCode != 416) {
                             File file = new File(mDownloadEntry.localPath);
@@ -140,14 +138,12 @@ public class Mortar {
 
                         switch (responseCode) {
                             case 416:   // Requested Range Not Satisfiable. May be exceed file size.
-                                Log.d(Mortar.TAG, "File already downloaded");
+                                Log.d(Mortar.TAG, "File already downloaded 2");
                                 return null;
                             default:
                                 in = new BufferedInputStream(conn.getInputStream());
                                 randomAccessFile = new RandomAccessFile(mTargetFile, "rw");
-                                if (mDownloadListener != null) {
-                                    mDownloadListener.onStart();
-                                }
+                                postStart();
                                 while ((bytesReadOnce = in.read(buffer)) != -1) {
                                     randomAccessFile.seek(mDownloadEntry.downloadedLength);
                                     randomAccessFile.write(buffer, 0, bytesReadOnce);
@@ -184,6 +180,7 @@ public class Mortar {
                 postFailure(-1, e.getMessage());
             } finally {
                 MortarProvider.save(mContext, mDownloadEntry);
+                MortarProvider.print(mContext);
                 closeStream(in);
                 disconnect(conn);
             }
@@ -247,6 +244,17 @@ public class Mortar {
     private void disconnect(HttpURLConnection connection) {
         if (connection != null) {
             connection.disconnect();
+        }
+    }
+
+    private void postStart() {
+        if (mDownloadListener != null) {
+            mHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    mDownloadListener.onStart();
+                }
+            });
         }
     }
 
