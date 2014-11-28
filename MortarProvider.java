@@ -5,7 +5,6 @@ import android.content.Context;
 import android.database.Cursor;
 import android.database.DatabaseUtils;
 import android.database.sqlite.SQLiteDatabase;
-import android.util.Log;
 
 import java.io.File;
 
@@ -37,11 +36,11 @@ public class MortarProvider {
                 values.put(DownloadEntry.COLUMN_DOWNLOADED_LENGTH, downloadEntry.downloadedLength);
                 int result = db.update(DownloadEntry.TABLE_NAME, values, WHERE_CLAUSE, whereArgs);
                 if (result != 1) {
-                    Log.e(Mortar.TAG, "Update Error !");
+                    MortarLog.e("Update Error !");
                 }
                 break;
             default:
-                Log.e(Mortar.TAG, "Same downloading exist !");
+                MortarLog.e("Same downloading exist !");
         }
         cursor.close();
         db.close();
@@ -69,7 +68,7 @@ public class MortarProvider {
                 }
                 break;
             default:
-                Log.e(Mortar.TAG, "Same downloading exist !");
+                MortarLog.e("Same downloading exist !");
         }
         cursor.close();
         db.close();
@@ -82,7 +81,7 @@ public class MortarProvider {
 
         Cursor cursor = db.query(true, DownloadEntry.TABLE_NAME, null, null, null, null, null, null, null);
         cursor.moveToFirst();
-        Log.d(Mortar.TAG, DatabaseUtils.dumpCursorToString(cursor));
+        MortarLog.d(DatabaseUtils.dumpCursorToString(cursor));
         cursor.close();
         db.close();
     }

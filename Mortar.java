@@ -3,7 +3,6 @@ package com.cvte.mortars;
 import android.content.Context;
 import android.os.AsyncTask;
 import android.os.Handler;
-import android.util.Log;
 
 import java.io.BufferedInputStream;
 import java.io.Closeable;
@@ -32,7 +31,6 @@ import java.util.concurrent.TimeUnit;
  * @version: 1.0
  */
 public class Mortar {
-    public static final String TAG = "Mortar" ;
     private static final int TIME_OUT_READ = 500 * 1000; //TODO 14-11-14 ok ?
     private static final int TIME_OUT_CONNECT = 15000;
     private static final String REQUEST_METHOD = "GET";
@@ -90,8 +88,7 @@ public class Mortar {
                             out.write(buffer, 0, bytesReadOnce);
                             mDownloadEntry.downloadedLength += bytesReadOnce;
                             MortarProvider.save(mContext, mDownloadEntry);
-                            Log.d(Mortar.TAG,
-                                    "responseCode=" + responseCode
+                            MortarLog.d("responseCode=" + responseCode
                                             + ", bytesReadOnce=" + bytesReadOnce
                                             + ", downloaded=" + mDownloadEntry.downloadedLength
                                             + ", total=" + totalLength
@@ -123,7 +120,7 @@ public class Mortar {
                         // ***** Begin a trick to check if support break-point download
                         if (mDownloadEntry.totalLength * 2 == totalLength) {
                             //Fixme 14-11-20 not rigorous, but how ?
-                            Log.d(Mortar.TAG, "File already downloaded 1");
+                            MortarLog.d("File already downloaded 1");
                             return null;
                         } else if (mDownloadEntry.totalLength < totalLength && responseCode != 416) {
                             File file = new File(mDownloadEntry.localPath);
@@ -138,7 +135,7 @@ public class Mortar {
 
                         switch (responseCode) {
                             case 416:   // Requested Range Not Satisfiable. May be exceed file size.
-                                Log.d(Mortar.TAG, "File already downloaded 2");
+                                MortarLog.d("File already downloaded 2");
                                 return null;
                             default:
                                 in = new BufferedInputStream(conn.getInputStream());
@@ -149,8 +146,7 @@ public class Mortar {
                                     randomAccessFile.write(buffer, 0, bytesReadOnce);
                                     mDownloadEntry.downloadedLength += bytesReadOnce;
                                     MortarProvider.save(mContext, mDownloadEntry);
-                                    Log.d(Mortar.TAG,
-                                            "responseCode=" + responseCode
+                                    MortarLog.d("responseCode=" + responseCode
                                                     + ", bytesReadOnce=" + bytesReadOnce
                                                     + ", downloaded=" + mDownloadEntry.downloadedLength
                                                     + ", total=" + totalLength
