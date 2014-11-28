@@ -1,4 +1,4 @@
-package com.cvte.mortars;
+package com.cvte.mortar;
 
 import android.content.ContentValues;
 import android.content.Context;

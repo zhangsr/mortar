@@ -1,4 +1,4 @@
-package com.cvte.mortars;
+package com.cvte.mortar;
 
 import android.provider.BaseColumns;
 
