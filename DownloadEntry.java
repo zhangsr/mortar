@@ -26,4 +26,14 @@ public class DownloadEntry implements BaseColumns {
         this.downloadedLength = downloadedLength;
         this.totalLength = totalLength;
     }
+
+    @Override
+    public boolean equals(Object o) {
+        return hashCode() == o.hashCode();
+    }
+
+    @Override
+    public int hashCode() {
+        return (url + localPath).hashCode();
+    }
 }

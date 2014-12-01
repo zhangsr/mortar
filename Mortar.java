@@ -14,10 +14,11 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.RandomAccessFile;
 import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
 import java.net.ProtocolException;
 import java.net.SocketTimeoutException;
 import java.net.URL;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executor;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -37,20 +38,26 @@ public class Mortar {
 
     private OnDownloadListener mDownloadListener;
     private File mTargetFile;
+    private static Mortar sMortar;
 
     private Context mContext;
     private Handler mHandler;
-    private DownloadEntry mDownloadEntry;
     private boolean mIsFailure;
-    private DownloadTask mCurrentTask;
+    private Set<DownloadEntry> mDownloadingSet = new HashSet<DownloadEntry>();
 
-
-    public Mortar(Context context) {
+    private Mortar(Context context) {
         mContext = context;
         mHandler = new Handler(context.getMainLooper());
     }
 
-    private class DownloadTask extends AsyncTask<URL, String, Object> {
+    public static Mortar getInstance(Context context) {
+        if (sMortar == null) {
+            sMortar = new Mortar(context);
+        }
+        return sMortar;
+    }
+
+    private class DownloadTask extends AsyncTask<DownloadEntry, String, Object> {
 
         @Override
         protected void onPreExecute() {
@@ -59,11 +66,13 @@ public class Mortar {
         }
 
         @Override
-        protected Object doInBackground(URL... params) {
-            URL url = params[0];
+        protected Object doInBackground(DownloadEntry... downloadEntries) {
             HttpURLConnection conn = null;
             InputStream in = null;
+            DownloadEntry downloadEntry = null;
             try {
+                downloadEntry = downloadEntries[0];
+                URL url = new URL(downloadEntry.url);
                 conn = (HttpURLConnection) url.openConnection();
                 conn.setReadTimeout(TIME_OUT_READ);
                 conn.setConnectTimeout(TIME_OUT_CONNECT);
@@ -74,26 +83,26 @@ public class Mortar {
                 byte[] buffer = new byte[512 * 1024];
                 long totalLength;
 
-                if (mDownloadEntry.downloadedLength == 0) {
+                if (downloadEntry.downloadedLength == 0) {
                     OutputStream out = null;
                     try {
                         conn.connect();
                         totalLength = conn.getContentLength();
-                        mDownloadEntry.totalLength = totalLength;
+                        downloadEntry.totalLength = totalLength;
                         responseCode = conn.getResponseCode();
                         in = new BufferedInputStream(conn.getInputStream());
                         out = new FileOutputStream(mTargetFile);
                         postStart();
                         while ((bytesReadOnce = in.read(buffer)) != -1) {
                             out.write(buffer, 0, bytesReadOnce);
-                            mDownloadEntry.downloadedLength += bytesReadOnce;
-                            MortarProvider.save(mContext, mDownloadEntry);
+                            downloadEntry.downloadedLength += bytesReadOnce;
+                            MortarProvider.save(mContext, downloadEntry);
                             MortarLog.d("responseCode=" + responseCode
                                             + ", bytesReadOnce=" + bytesReadOnce
-                                            + ", downloaded=" + mDownloadEntry.downloadedLength
+                                            + ", downloaded=" + downloadEntry.downloadedLength
                                             + ", total=" + totalLength
                                             + ", file=" + mTargetFile.getPath());
-                            postProgress(mDownloadEntry.downloadedLength, totalLength);
+                            postProgress(downloadEntry.downloadedLength, totalLength);
                         }
                     } catch (ProtocolException e) {
                         e.printStackTrace();
@@ -108,25 +117,25 @@ public class Mortar {
                         closeStream(out);
                     }
 
-                } else if (mDownloadEntry.downloadedLength > 0) {
+                } else if (downloadEntry.downloadedLength > 0) {
                     RandomAccessFile randomAccessFile = null;
                     try {
-                        conn.setRequestProperty("Range", "bytes=" + mDownloadEntry.downloadedLength + "-");
+                        conn.setRequestProperty("Range", "bytes=" + downloadEntry.downloadedLength + "-");
                         conn.connect();
                         responseCode = conn.getResponseCode();
 
-                        totalLength = mDownloadEntry.downloadedLength + conn.getContentLength();
+                        totalLength = downloadEntry.downloadedLength + conn.getContentLength();
 
                         // ***** Begin a trick to check if support break-point download
-                        if (mDownloadEntry.totalLength * 2 == totalLength) {
+                        if (downloadEntry.totalLength * 2 == totalLength) {
                             //Fixme 14-11-20 not rigorous, but how ?
                             MortarLog.d("File already downloaded 1");
                             return null;
-                        } else if (mDownloadEntry.totalLength < totalLength && responseCode != 416) {
-                            File file = new File(mDownloadEntry.localPath);
+                        } else if (downloadEntry.totalLength < totalLength && responseCode != 416) {
+                            File file = new File(downloadEntry.localPath);
                             if (!file.exists() || file.delete()) {
-                                mDownloadEntry.downloadedLength = 0;
-                                totalLength = mDownloadEntry.totalLength;
+                                downloadEntry.downloadedLength = 0;
+                                totalLength = downloadEntry.totalLength;
                             } else {
                                 postFailure(-1, "Server not support break-point download and restart download failed");
                             }
@@ -142,16 +151,16 @@ public class Mortar {
                                 randomAccessFile = new RandomAccessFile(mTargetFile, "rw");
                                 postStart();
                                 while ((bytesReadOnce = in.read(buffer)) != -1) {
-                                    randomAccessFile.seek(mDownloadEntry.downloadedLength);
+                                    randomAccessFile.seek(downloadEntry.downloadedLength);
                                     randomAccessFile.write(buffer, 0, bytesReadOnce);
-                                    mDownloadEntry.downloadedLength += bytesReadOnce;
-                                    MortarProvider.save(mContext, mDownloadEntry);
+                                    downloadEntry.downloadedLength += bytesReadOnce;
+                                    MortarProvider.save(mContext, downloadEntry);
                                     MortarLog.d("responseCode=" + responseCode
                                                     + ", bytesReadOnce=" + bytesReadOnce
-                                                    + ", downloaded=" + mDownloadEntry.downloadedLength
+                                                    + ", downloaded=" + downloadEntry.downloadedLength
                                                     + ", total=" + totalLength
                                                     + ", file=" + mTargetFile.getPath());
-                                    postProgress(mDownloadEntry.downloadedLength, totalLength);
+                                    postProgress(downloadEntry.downloadedLength, totalLength);
                                 }
                         }
                     } catch (SocketTimeoutException e) {
@@ -175,8 +184,9 @@ public class Mortar {
                 e.printStackTrace();
                 postFailure(-1, e.getMessage());
             } finally {
-                MortarProvider.save(mContext, mDownloadEntry);
+                MortarProvider.save(mContext, downloadEntry);
                 MortarProvider.print(mContext);
+                mDownloadingSet.remove(downloadEntry);
                 closeStream(in);
                 disconnect(conn);
             }
@@ -192,19 +202,18 @@ public class Mortar {
         }
     }
 
-    public void download(String url, File file, OnDownloadListener listener) {
-        try {
-            mTargetFile = file;
-            mDownloadListener = listener;
+    public synchronized void download(String url, File file, OnDownloadListener listener) {
+        mTargetFile = file;
+        mDownloadListener = listener;
 
-            mDownloadEntry = MortarProvider.load(mContext, url, mTargetFile.getPath());
-            if (mDownloadEntry == null) {
-                mDownloadEntry = new DownloadEntry(url, mTargetFile.getPath(), 0, -1);
-            }
-            if (mCurrentTask != null && !mCurrentTask.isCancelled()) {
-                mCurrentTask.cancel(true);
-            }
-            mCurrentTask = new DownloadTask();
+        DownloadEntry downloadEntry = MortarProvider.load(mContext, url, mTargetFile.getPath());
+        if (downloadEntry == null) {
+            downloadEntry = new DownloadEntry(url, mTargetFile.getPath(), 0, -1);
+        }
+        if (mDownloadingSet.contains(downloadEntry)) {
+            postFailure(MortarStatus.CODE_FAILURE_ALREADY_DOWNLOADING, MortarStatus.MSG_FAILURE_ALREADY_DOWNLOADING);
+        } else {
+            mDownloadingSet.add(downloadEntry);
 
             // Fix doInBackground not called, ref : http://stackoverflow.com/questions/16832376/asynctask-doinbackground-not-called
             int corePoolSize = 60;
@@ -214,9 +223,7 @@ public class Mortar {
             Executor threadPoolExecutor = new ThreadPoolExecutor(corePoolSize, maximumPoolSize, keepAliveTime,
                     TimeUnit.SECONDS, workQueue);
 
-            mCurrentTask.executeOnExecutor(threadPoolExecutor, new URL(url));
-        } catch (MalformedURLException e) {
-            e.printStackTrace();
+            new DownloadTask().executeOnExecutor(threadPoolExecutor, downloadEntry);
         }
     }
 

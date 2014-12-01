@@ -18,6 +18,11 @@ public class MortarProvider {
     private static final String WHERE_CLAUSE = DownloadEntry.COLUMN_URL + "=? AND " + DownloadEntry.COLUMN_LOCAL_PATH + "=?";
 
     public static void save(Context context, DownloadEntry downloadEntry) {
+        if (downloadEntry == null) {
+            MortarLog.e("Download entry is null");
+            return;
+        }
+
         MortarDBHelper dbHelper = new MortarDBHelper(context);
         SQLiteDatabase db = dbHelper.getWritableDatabase();
 
