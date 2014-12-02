@@ -90,4 +90,13 @@ public class MortarProvider {
         cursor.close();
         db.close();
     }
+
+    public static void delete(Context context, DownloadEntry downloadEntry) {
+        MortarDBHelper dbHelper = new MortarDBHelper(context);
+        SQLiteDatabase db = dbHelper.getWritableDatabase();
+
+        String[] whereArgs = new String[]{downloadEntry.url, downloadEntry.localPath};
+        db.delete(DownloadEntry.TABLE_NAME, WHERE_CLAUSE, whereArgs);
+        db.close();
+    }
 }

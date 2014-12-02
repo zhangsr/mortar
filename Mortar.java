@@ -35,14 +35,9 @@ public class Mortar {
     private static final int TIME_OUT_READ = 500 * 1000; //TODO 14-11-14 ok ?
     private static final int TIME_OUT_CONNECT = 15000;
     private static final String REQUEST_METHOD = "GET";
-
-    private OnDownloadListener mDownloadListener;
-    private File mTargetFile;
     private static Mortar sMortar;
-
     private Context mContext;
     private Handler mHandler;
-    private boolean mIsFailure;
     private Set<DownloadEntry> mDownloadingSet = new HashSet<DownloadEntry>();
 
     private Mortar(Context context) {
@@ -58,20 +53,16 @@ public class Mortar {
     }
 
     private class DownloadTask extends AsyncTask<DownloadEntry, String, Object> {
-
-        @Override
-        protected void onPreExecute() {
-            super.onPreExecute();
-            mIsFailure = false;
-        }
+        private File targetFile = null;
+        private DownloadEntry downloadEntry = null;
 
         @Override
         protected Object doInBackground(DownloadEntry... downloadEntries) {
             HttpURLConnection conn = null;
             InputStream in = null;
-            DownloadEntry downloadEntry = null;
             try {
                 downloadEntry = downloadEntries[0];
+                targetFile = new File(downloadEntry.localPath);
                 URL url = new URL(downloadEntry.url);
                 conn = (HttpURLConnection) url.openConnection();
                 conn.setReadTimeout(TIME_OUT_READ);
@@ -84,6 +75,10 @@ public class Mortar {
                 long totalLength;
 
                 if (downloadEntry.downloadedLength == 0) {
+                    if (targetFile.exists()) {
+                        targetFile.delete();
+                    }
+
                     OutputStream out = null;
                     try {
                         conn.connect();
@@ -91,8 +86,8 @@ public class Mortar {
                         downloadEntry.totalLength = totalLength;
                         responseCode = conn.getResponseCode();
                         in = new BufferedInputStream(conn.getInputStream());
-                        out = new FileOutputStream(mTargetFile);
-                        postStart();
+                        out = new FileOutputStream(targetFile);
+                        postStart(downloadEntry);
                         while ((bytesReadOnce = in.read(buffer)) != -1) {
                             out.write(buffer, 0, bytesReadOnce);
                             downloadEntry.downloadedLength += bytesReadOnce;
@@ -101,18 +96,18 @@ public class Mortar {
                                             + ", bytesReadOnce=" + bytesReadOnce
                                             + ", downloaded=" + downloadEntry.downloadedLength
                                             + ", total=" + totalLength
-                                            + ", file=" + mTargetFile.getPath());
-                            postProgress(downloadEntry.downloadedLength, totalLength);
+                                            + ", file=" + targetFile.getPath());
+                            postProgress(downloadEntry);
                         }
                     } catch (ProtocolException e) {
                         e.printStackTrace();
-                        postFailure(responseCode, e.getMessage());
+                        postFailure(responseCode, e.getMessage(), downloadEntry);
                     } catch (FileNotFoundException e) {
                         e.printStackTrace();
-                        postFailure(responseCode, e.getMessage());
+                        postFailure(responseCode, e.getMessage(), downloadEntry);
                     } catch (IOException e) {
                         e.printStackTrace();
-                        postFailure(responseCode, e.getMessage());
+                        postFailure(responseCode, e.getMessage(), downloadEntry);
                     } finally {
                         closeStream(out);
                     }
@@ -137,7 +132,8 @@ public class Mortar {
                                 downloadEntry.downloadedLength = 0;
                                 totalLength = downloadEntry.totalLength;
                             } else {
-                                postFailure(-1, "Server not support break-point download and restart download failed");
+                                postFailure(-1, "Server not support break-point download and restart download failed",
+                                        downloadEntry);
                             }
                         }
                         // ***** End of trick
@@ -148,8 +144,8 @@ public class Mortar {
                                 return null;
                             default:
                                 in = new BufferedInputStream(conn.getInputStream());
-                                randomAccessFile = new RandomAccessFile(mTargetFile, "rw");
-                                postStart();
+                                randomAccessFile = new RandomAccessFile(targetFile, "rw");
+                                postStart(downloadEntry);
                                 while ((bytesReadOnce = in.read(buffer)) != -1) {
                                     randomAccessFile.seek(downloadEntry.downloadedLength);
                                     randomAccessFile.write(buffer, 0, bytesReadOnce);
@@ -159,30 +155,34 @@ public class Mortar {
                                                     + ", bytesReadOnce=" + bytesReadOnce
                                                     + ", downloaded=" + downloadEntry.downloadedLength
                                                     + ", total=" + totalLength
-                                                    + ", file=" + mTargetFile.getPath());
-                                    postProgress(downloadEntry.downloadedLength, totalLength);
+                                                    + ", file=" + targetFile.getPath());
+                                    postProgress(downloadEntry);
                                 }
                         }
                     } catch (SocketTimeoutException e) {
                         e.printStackTrace();
-                        postFailure(responseCode, e.getMessage());
+                        postFailure(responseCode, e.getMessage(), downloadEntry);
                     } catch (FileNotFoundException e) {
                         e.printStackTrace();
-                        postFailure(responseCode, e.getMessage());
+                        postFailure(responseCode, e.getMessage(), downloadEntry);
                     } catch (IOException e) {
                         e.printStackTrace();
-                        postFailure(responseCode, e.getMessage());
+                        postFailure(responseCode, e.getMessage(), downloadEntry);
                     } finally {
                         closeStream(randomAccessFile);
                     }
 
                 }
+
+                postSuccess(downloadEntry);
+                //TODO 14-11-20 need to delete db record when success ?
+                MortarProvider.delete(mContext, downloadEntry);
             } catch (ProtocolException e) {
                 e.printStackTrace();
-                postFailure(-1, e.getMessage());
+                postFailure(-1, e.getMessage(), downloadEntry);
             } catch (IOException e) {
                 e.printStackTrace();
-                postFailure(-1, e.getMessage());
+                postFailure(-1, e.getMessage(), downloadEntry);
             } finally {
                 MortarProvider.save(mContext, downloadEntry);
                 MortarProvider.print(mContext);
@@ -192,26 +192,18 @@ public class Mortar {
             }
             return null;
         }
-
-        @Override
-        protected void onPostExecute(Object o) {
-            super.onPostExecute(o);
-            if (!mIsFailure) {
-                postSuccess(mTargetFile);
-            }
-        }
     }
 
     public synchronized void download(String url, File file, OnDownloadListener listener) {
-        mTargetFile = file;
-        mDownloadListener = listener;
-
-        DownloadEntry downloadEntry = MortarProvider.load(mContext, url, mTargetFile.getPath());
+        // make sure downloadEntry not null
+        DownloadEntry downloadEntry = MortarProvider.load(mContext, url, file.getPath());
         if (downloadEntry == null) {
-            downloadEntry = new DownloadEntry(url, mTargetFile.getPath(), 0, -1);
+            downloadEntry = new DownloadEntry(url, file.getPath(), 0, -1);
         }
+        downloadEntry.listener = listener;
         if (mDownloadingSet.contains(downloadEntry)) {
-            postFailure(MortarStatus.CODE_FAILURE_ALREADY_DOWNLOADING, MortarStatus.MSG_FAILURE_ALREADY_DOWNLOADING);
+            postFailure(MortarStatus.CODE_FAILURE_ALREADY_DOWNLOADING, MortarStatus.MSG_FAILURE_ALREADY_DOWNLOADING,
+                    downloadEntry);
         } else {
             mDownloadingSet.add(downloadEntry);
 
@@ -250,47 +242,45 @@ public class Mortar {
         }
     }
 
-    private void postStart() {
-        if (mDownloadListener != null) {
+    private void postStart(final DownloadEntry downloadEntry) {
+        if (downloadEntry.listener != null) {
             mHandler.post(new Runnable() {
                 @Override
                 public void run() {
-                    mDownloadListener.onStart();
+                    downloadEntry.listener.onStart();
                 }
             });
         }
     }
 
-    private void postSuccess(final File file) {
-        //TODO 14-11-20 need to delete db record when success ?
-        if (mDownloadListener != null) {
+    private void postSuccess(final DownloadEntry downloadEntry) {
+        if (downloadEntry.listener != null) {
             mHandler.post(new Runnable() {
                 @Override
                 public void run() {
-                    mDownloadListener.onSuccess(file);
+                    downloadEntry.listener.onSuccess(new File(downloadEntry.localPath));
                 }
             });
         }
     }
 
-    private void postFailure(final int reasonCode, final String message) {
-        mIsFailure = true;
-        if (mDownloadListener != null) {
+    private void postFailure(final int reasonCode, final String message, final DownloadEntry downloadEntry) {
+        if (downloadEntry.listener != null) {
             mHandler.post(new Runnable() {
                 @Override
                 public void run() {
-                    mDownloadListener.onFailure(reasonCode, message);
+                    downloadEntry.listener.onFailure(reasonCode, message);
                 }
             });
         }
     }
 
-    private void postProgress(final long downloaded, final long total) {
-        if (mDownloadListener != null) {
+    private void postProgress(final DownloadEntry downloadEntry) {
+        if (downloadEntry.listener != null) {
             mHandler.post(new Runnable() {
                 @Override
                 public void run() {
-                    mDownloadListener.onProgress(downloaded, total);
+                    downloadEntry.listener.onProgress(downloadEntry.downloadedLength, downloadEntry.totalLength);
                 }
             });
         }
