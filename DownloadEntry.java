@@ -19,7 +19,7 @@ public class DownloadEntry implements BaseColumns {
     public String localPath;
     public long downloadedLength;
     public long totalLength;
-    public Mortar.OnDownloadListener listener;
+    public OnDownloadListener listener;
 
     public DownloadEntry(String url, String localPath, long downloadedLength, long totalLength) {
         this.url = url;

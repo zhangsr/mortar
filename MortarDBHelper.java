@@ -11,7 +11,7 @@ import android.database.sqlite.SQLiteOpenHelper;
  * @version: 1.0
  */
 public class MortarDBHelper extends SQLiteOpenHelper {
-    private static final int DB_VERSION = 2;
+    private static final int DB_VERSION = 3;
     private static final String DB_NAME = "Mortar.db";
     private static final String TYPE_TEXT = " TEXT";
     private static final String TYPE_INTEGER = " INTEGER";
